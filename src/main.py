@@ -1,28 +1,47 @@
 # coding=utf-8
 
-from .entities.entity import Session, engine, Base
-from .entities.user import User
+from flask import Flask, jsonify, request
 
-# generate database schema
+from .entities.entity import Session, engine, Base
+from .entities.user import User, UserSchema
+
+# creating the Flask application
+app = Flask(__name__)
+
+# if needed, generate database schema
 Base.metadata.create_all(engine)
 
-# start session
-session = Session()
 
-# check for existing data
-users = session.query(User).all()
+@app.route('/users')
+def get_users():
+    # fetching from the database
+    session = Session()
+    user_objects = session.query(User).all()
 
-if len(users) == 0:
-    # create and persist mock user
-    python_user = User("SQLAlchemy User", "Test your knowledge about SQLAlchemy.", "script")
-    session.add(python_user)
-    session.commit()
+    # transforming into JSON-serializable objects
+    schema = UserSchema(many=True)
+    users = schema.dump(user_objects)
+
+    # serializing as JSON
     session.close()
+    return jsonify(users)
 
-    # reload users
-    users = session.query(User).all()
 
-# show existing users
-print('### Users:')
-for user in users:
-    print(f'({user.id}) {user.username} - {user.description}')
+@app.route('/users', methods=['POST'])
+def add_user():
+    # mount user object
+    print(request.get_json())
+    posted_user = UserSchema(only=('username', 'description')).load(request.get_json())
+
+    user = User(**posted_user, created_by="HTTP post request")
+
+    # persist user
+    session = Session()
+    session.add(user)
+    session.commit()
+
+    # return created user
+    new_user = UserSchema().dump(user)
+    session.close()
+    return jsonify(new_user), 201
+
